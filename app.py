@@ -1,90 +1,129 @@
+import os
+import json
+import numpy as np
 import streamlit as st
-import json, os
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# ==========================
-# 🔑 SETUP
-# ==========================
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# ==============================================
+# ✅ API CONFIG — Load securely from Streamlit secrets
+# ==============================================
+try:
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+except Exception as e:
+    st.error("⚠️ Could not load OpenAI API key. Make sure it's set in Streamlit Secrets.")
+    st.stop()
 
-st.set_page_config(page_title="Arabic Study Assistant", layout="centered")
+# ==============================================
+# 🧱 PAGE CONFIG
+# ==============================================
+st.set_page_config(page_title="🧠 Arabic Study Assistant", layout="wide")
 
-# ==========================
-# 📚 Load book data
-# ==========================
-with open("data/arabic_book_text.txt", "r", encoding="utf-8") as f:
-    book_text = f.read()
-with open("data/embeddings.json", "r", encoding="utf-8") as f:
-    embeddings = json.load(f)
+# ==============================================
+# 📘 LOAD DATA
+# ==============================================
+try:
+    with open("data/arabic_book_text.txt", "r", encoding="utf-8") as f:
+        book_text = f.read()
 
+    with open("data/embeddings.json", "r", encoding="utf-8") as f:
+        embeddings_data = json.load(f)
+except FileNotFoundError:
+    st.error("❌ Data files not found. Please ensure 'data/arabic_book_text.txt' and 'data/embeddings.json' exist.")
+    st.stop()
+
+# ==============================================
+# 📚 STRUCTURED CHAPTERS
+# ==============================================
 chapters = {
     "📖 القراءة العربية": [
-        "إرادة التغيير", "أبو الريحان البيروني", "القدس مدينة عربية إسلامية",
-        "العلم في الإسلام", "قيم إنسانية"
+        "إرادة التغيير",
+        "أبو الريحان البيروني",
+        "القدس مدينة عربية إسلامية",
+        "العلم في الإسلام",
+        "قيم إنسانية"
     ],
     "✍️ الأدب والنصوص": [
-        "مدرسة الإحياء والبعث", "أحمد شوقي", "المدارس الرومانتيكية", "المقال",
-        "القصة القصيرة", "التمثيلية"
+        "مدرسة الإحياء والبعث وجيل التطوير",
+        "أحمد شوقي وجيل التطوير",
+        "المدارس الرومانسية في الشعر العربي",
+        "الاتجاه الرومانسي",
+        "المرأة - خليل مطران",
+        "رفاء القاتل",
+        "أهوارك يا وطني - محمود حسن إسماعيل",
+        "من أنت يا نفسي - ميخائيل نعيمة"
     ],
-    "🎨 البلاغة": ["التجربة الشعرية", "الوحدة الفنية"],
-    "🧠 التدريبات اللغوية": [
-        "النطق والإملاء", "الأبنية", "التراكيب", "إعراب الاسم",
-        "إعراب الفعل", "الأدوات", "الممنوع من الصرف"
+    "📗 النثر وفنونه": [
+        "المقال",
+        "الرواية",
+        "القصة القصيرة",
+        "الكنيسة نورت - إبراهيم أصلان",
+        "المسرحية"
     ],
+    "💬 البلاغة: مفاهيم نقدية": [
+        "التجربة الشعرية",
+        "الرحلة الفنية"
+    ],
+    "🧩 التدريبات اللغوية": [
+        "النطق والإملاء",
+        "الأبنية",
+        "الترادف",
+        "إعراب الاسم",
+        "إعراب الفعل",
+        "الأدوات",
+        "الممنوع من الصرف"
+    ]
 }
 
-# ==========================
-# 💬 Chat Interface
-# ==========================
+# ==============================================
+# 🧠 AI FUNCTIONS
+# ==============================================
+def ask_question(prompt, chapter_text):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an Arabic language study assistant. Answer in Arabic clearly and helpfully."},
+                {"role": "user", "content": f"Text: {chapter_text}\n\nQuestion: {prompt}"}
+            ]
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"⚠️ Error: {str(e)}"
+
+# ==============================================
+# 💬 CHAT INTERFACE
+# ==============================================
+st.sidebar.title("📘 Choose Chapter")
+
+main_section = st.sidebar.selectbox("Main Section:", list(chapters.keys()))
+unit = st.sidebar.selectbox("Unit:", chapters[main_section])
+
 st.title("🧠 Arabic Study Assistant")
-st.caption("Chat with your Arabic book — ask questions, get summaries or generate quizzes.")
+st.markdown("Chat with your Arabic book — ask questions, get summaries or generate quizzes.")
 
-st.sidebar.header("📚 Choose Chapter")
-chapter = st.sidebar.selectbox("Main Section:", list(chapters.keys()))
-unit = st.sidebar.selectbox("Unit:", chapters[chapter])
-
-# Initialize chat history
+# Store chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display previous chat history
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# Get the selected chapter content
+chapter_text = f"Extracted text for: {unit}\n\n{book_text[:2000]}"
+
+# Chat UI
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
 # User input
-user_input = st.chat_input("Ask something about this unit...")
+if prompt := st.chat_input("Ask something about this unit..."):
+    # Display user message
+    st.chat_message("user").markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
-if user_input:
-    # Add user message to session state
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
-
-    # Display "thinking..." before the AI responds
+    # Generate assistant response
     with st.chat_message("assistant"):
-        thinking_placeholder = st.empty()
-        thinking_placeholder.markdown("🤔 **Thinking...**")
-
-        try:
-            # Generate response using OpenAI API
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": f"You are a helpful Arabic study assistant. Context: chapter '{chapter}', unit '{unit}'."},
-                    *st.session_state.messages
-                ]
-            )
-            answer = response.choices[0].message.content
-
-            # Replace "thinking..." with final answer
-            thinking_placeholder.markdown(answer)
-
-            # Save AI message to chat history
-            st.session_state.messages.append({"role": "assistant", "content": answer})
-
-        except Exception as e:
-            thinking_placeholder.markdown(f"⚠️ Error: {e}")
+        with st.spinner("🤔 Thinking..."):
+            response = ask_question(prompt, chapter_text)
+            st.markdown(response)
+            st.session_state.messages.append({"role": "assistant", "content": response})
 
