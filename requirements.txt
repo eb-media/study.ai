@@ -1,0 +1,5 @@
+openai
+streamlit
+numpy
+pypdfium2
+python-dotenv
